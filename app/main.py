@@ -1,11 +1,15 @@
-from fastapi import FastAPI, Depends
-from sqlalchemy.orm import Session
-from app.core.database import get_db
-from app.routes.health import router as health_router
+from fastapi import FastAPI
 
+from app.core.database import engine, Base
+from app.routes.health import router as health_router
+from app.routes.material import router as material_router
+
+
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 app.include_router(health_router)
+app.include_router(material_router)
 
 
 @app.get("/", tags=["main page"])
