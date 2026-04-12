@@ -35,7 +35,7 @@ class MaterialServices:
         if update_data.name is not None:
             existing_material = material_repository.get_by_name(db=db, name=update_data.name)
             
-            if existing_material is not None:
+            if existing_material is not None and existing_material.id != id:
                 raise HTTPException(status_code=400, detail="Material with this name already exists")
             
             material.name = update_data.name    
