@@ -14,7 +14,6 @@ def get_all_materials_route(db: Session = Depends(get_db)):
     return material_services.get_all_materials(db=db)
     
 
-
 @router.get("/{id}", response_model=Material)
 def get_material_by_id_route(id: int, db: Session = Depends(get_db)):
     return material_services.get_material_by_id(db=db, id=id)
