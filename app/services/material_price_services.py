@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.repositories.material_price_repository import material_price_repository
 from app.repositories.supplier_product_repository import supplier_product_repository
-from app.schemas.material_price_schema import CreateMaterialPrice, UpdateMaterialPrice
+from app.schemas.material_price_schema import CreateMaterialPrice
 
 
 class MaterialPriceService:
