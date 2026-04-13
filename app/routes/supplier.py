@@ -19,7 +19,7 @@ def get_supplier_by_id_route(id: int, db: Session = Depends(get_db)):
     return supplier_services.get_supplier_by_id(db=db, id=id)
 
 
-@router.post("/", response_model=Supplier)
+@router.post("/", response_model=Supplier, status_code=201)
 def create_supplier_route(new_data: CreateSupplier, db: Session = Depends(get_db)):
     return supplier_services.create_supplier(db=db, new_supplier=new_data)
 

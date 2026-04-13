@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime
 from datetime import datetime
+from sqlalchemy.orm import relationship
 
 from app.core.database import Base
 
@@ -15,3 +16,5 @@ class Supplier(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, 
                         onupdate=datetime.utcnow)
+    
+    products = relationship("SupplierProduct", back_populates="supplier")

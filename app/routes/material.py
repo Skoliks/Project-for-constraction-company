@@ -19,7 +19,7 @@ def get_material_by_id_route(id: int, db: Session = Depends(get_db)):
     return material_services.get_material_by_id(db=db, id=id)
 
 
-@router.post("/", response_model=Material)
+@router.post("/", response_model=Material, status_code=201)
 def create_material_route(new_material: CreateMaterial, db: Session = Depends(get_db)):
     return material_services.create_material(db=db, new_data=new_material)
 

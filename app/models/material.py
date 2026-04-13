@@ -1,6 +1,8 @@
 from app.core.database import Base
 from sqlalchemy import Column, Integer, String, DateTime, Text
 from datetime import datetime
+from sqlalchemy.orm import relationship
+
 
 class Material(Base):
     __tablename__ = "materials"
@@ -15,6 +17,8 @@ class Material(Base):
                         nullable=True, 
                         default=datetime.utcnow,
                         onupdate=datetime.utcnow)
+    
+    supplier_products = relationship("SupplierProduct", back_populates="material")
     
     
     
