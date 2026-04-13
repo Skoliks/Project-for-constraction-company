@@ -18,7 +18,7 @@ class Material(Base):
                         default=datetime.utcnow,
                         onupdate=datetime.utcnow)
     
-    supplier_products = relationship("SupplierProduct", back_populates="material")
+    supplier_product = relationship("SupplierProduct", back_populates="material")
     
     
     

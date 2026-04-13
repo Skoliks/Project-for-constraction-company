@@ -24,3 +24,4 @@ class SupplierProduct(Base):
     
     supplier = relationship("Supplier", back_populates="products")
     material = relationship("Material", back_populates="supplier_products")
+    prices = relationship("MaterialPrice", back_populates="supplier_product")
