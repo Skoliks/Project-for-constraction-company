@@ -15,7 +15,7 @@ class SupplierProduct(Base):
     
     external_name = Column(String, nullable=False)
     product_url = Column(String, nullable=False, unique=True)
-    sku = Column(String, nullable=True, unique=True)
+    sku = Column(String, nullable=True)
     unit = Column(String, nullable=True)
     attributes_json = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

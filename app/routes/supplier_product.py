@@ -10,7 +10,7 @@ from app.schemas.supplier_product_schema import (
 )
 
 
-router = APIRouter(prefix="supplier_products", tags=["Supplier products"])
+router = APIRouter(prefix="/supplier-products", tags=["Supplier products"])
 
 
 @router.get("/", response_model=list[SupplierProduct])
@@ -30,7 +30,7 @@ def create_supplier_product_route(new_data: CreateSupplierProduct, db: Session =
 
 @router.patch("/{id}", response_model=SupplierProduct)
 def update_supplier_product_route(new_data: UpdateSupplierProduct, id: int, db: Session = Depends(get_db)):
-    return supplier_product_service.update_supplier_product(db=db, update_data=new_data)
+    return supplier_product_service.update_supplier_product(db=db, update_data=new_data, id=id)
 
 
 @router.delete("/{id}", response_model=SupplierProduct)
