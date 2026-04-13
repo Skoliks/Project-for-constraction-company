@@ -1,9 +1,11 @@
 from pydantic import BaseModel
 from datetime import datetime
+from app.schemas.enums import MaterialCategory
+
 
 class MaterialBase(BaseModel):
     name: str
-    category: str | None = None
+    category: MaterialCategory | None = None
     base_unit: str | None = None
     description: str | None = None
 
@@ -14,7 +16,7 @@ class CreateMaterial(MaterialBase):
     
 class UpdateMaterial(BaseModel):
     name: str | None = None
-    category: str | None = None
+    category: MaterialCategory | None = None
     base_unit: str | None = None
     description: str | None = None
     
