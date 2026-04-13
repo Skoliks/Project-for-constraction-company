@@ -23,5 +23,5 @@ class SupplierProduct(Base):
                         onupdate=datetime.utcnow)
     
     supplier = relationship("Supplier", back_populates="products")
-    material = relationship("Material", back_populates="supplier_products")
+    material = relationship("Material", back_populates="supplier_product")
     prices = relationship("MaterialPrice", back_populates="supplier_product")

@@ -1,7 +1,8 @@
 from app.core.database import SessionLocal
 from app.models.material import Material
 from app.models.supplier import Supplier
-
+from app.models.supplier_product import SupplierProduct
+from app.models.material_price import MaterialPrice
 
 MATERIALS = [
     {
