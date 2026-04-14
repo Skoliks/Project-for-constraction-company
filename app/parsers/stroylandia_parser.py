@@ -1,8 +1,9 @@
-from bs4 import BeautifulSoup
-import requests
-import time
+import asyncio
 import math
 from urllib.parse import urljoin, urlparse, parse_qs, urlencode, urlunparse
+
+import aiohttp
+from bs4 import BeautifulSoup
 
 
 STROYLANDIYA_CATEGORY_URLS = {
@@ -14,12 +15,12 @@ STROYLANDIYA_CATEGORY_URLS = {
     "Цемент": "https://stroylandiya.ru/catalog/tsement/",
     "Арматура": "https://stroylandiya.ru/catalog/armatura/",
     "Пластиковые окна": "https://stroylandiya.ru/catalog/plastikovie-okna/",
-    "Профнастил": "https://stroylandiya.ru/search/?q=профнастил"
+    "Профнастил": "https://stroylandiya.ru/search/?q=профнастил",
 }
 
 BASE_URL = "https://stroylandiya.ru"
 
-headers = {
+HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -30,32 +31,12 @@ headers = {
     "Connection": "keep-alive",
 }
 
-
-def get_page(url: str) -> str | None:
-    try:
-        response = requests.get(url=url, headers=headers, timeout=10)
-        response.raise_for_status()
-    except requests.exceptions.Timeout as e:
-        print("Timeout:", e)
-        return None
-    except requests.exceptions.RequestException as e:
-        print("Error:", e)
-        return None
-
-    print(f"Данные успешно загружены: {url}")
-    return response.text
+MAX_CONCURRENT_REQUESTS = 3
+REQUEST_DELAY_SECONDS = 0.5
 
 
 def get_total_pages(html: str) -> int:
-    """
-    Определяем число страниц категории.
-
-    Приоритет:
-    1. Через data-total и data-per-page из блока .fb-pagination
-    2. Через максимальный data-page у .fb-pagination__page
-    3. Если пагинации нет - 1 страница
-    """
-    soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(html, "lxml")
 
     pagination = soup.find("div", class_="fb-pagination")
     if pagination is not None:
@@ -88,10 +69,6 @@ def get_total_pages(html: str) -> int:
 
 
 def add_or_replace_query_param(url: str, key: str, value: str) -> str:
-    """
-    Добавляет или заменяет query-параметр в URL.
-    Работает и для catalog, и для search.
-    """
     parsed = urlparse(url)
     query = parse_qs(parsed.query, keep_blank_values=True)
 
@@ -104,21 +81,13 @@ def add_or_replace_query_param(url: str, key: str, value: str) -> str:
         parsed.path,
         parsed.params,
         new_query,
-        parsed.fragment
+        parsed.fragment,
     ))
     return new_url
 
 
 def build_pagination_urls(category_url: str, html: str) -> list[str]:
-    """
-    Собирает список URL всех страниц категории.
-
-    Логика:
-    - первая страница = category_url
-    - если в html есть прямые href в пагинации, берем их
-    - если не хватает страниц, достраиваем вручную через PAGEN_1
-    """
-    soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(html, "lxml")
     total_pages = get_total_pages(html)
 
     page_urls = [category_url]
@@ -126,7 +95,6 @@ def build_pagination_urls(category_url: str, html: str) -> list[str]:
     if total_pages == 1:
         return page_urls
 
-    # 1. Пытаемся взять реальные ссылки из пагинации
     pagination_links = soup.select("li.fb-pagination__page a[href]")
     found_urls = set()
 
@@ -138,19 +106,15 @@ def build_pagination_urls(category_url: str, html: str) -> list[str]:
         full_url = urljoin(BASE_URL, href)
         found_urls.add(full_url)
 
-    # добавляем найденные ссылки
     for url in found_urls:
         if url not in page_urls:
             page_urls.append(url)
 
-    # 2. Если каких-то страниц не хватило — достраиваем сами
-    # На сайте используется PAGEN_1=2
     for page_num in range(2, total_pages + 1):
         fallback_url = add_or_replace_query_param(category_url, "PAGEN_1", str(page_num))
         if fallback_url not in page_urls:
             page_urls.append(fallback_url)
 
-    # сортировка по номеру страницы
     def get_page_num(url: str) -> int:
         parsed = urlparse(url)
         query = parse_qs(parsed.query)
@@ -162,16 +126,14 @@ def build_pagination_urls(category_url: str, html: str) -> list[str]:
         except ValueError:
             return 1
 
-    page_urls = sorted(set(page_urls), key=get_page_num)
-    return page_urls
+    return sorted(set(page_urls), key=get_page_num)
 
 
 def parse_page(html: str) -> list[dict]:
-    soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(html, "lxml")
     data = []
 
     cards = soup.find_all("div", class_="any-recs-product")
-
     print(f"Найдено {len(cards)} карточек товара")
 
     for card in cards:
@@ -228,74 +190,136 @@ def parse_page(html: str) -> list[dict]:
     return data
 
 
-def collect_page(delay_seconds: float = 2.0) -> list[dict]:
+async def get_page(
+    session: aiohttp.ClientSession,
+    url: str,
+    semaphore: asyncio.Semaphore,
+    delay_seconds: float = REQUEST_DELAY_SECONDS,
+) -> str | None:
+    async with semaphore:
+        if delay_seconds > 0:
+            await asyncio.sleep(delay_seconds)
+
+        try:
+            async with session.get(url) as response:
+                response.raise_for_status()
+                html = await response.text()
+                print(f"Данные успешно загружены: {url}")
+                return html
+
+        except asyncio.TimeoutError:
+            print(f"Timeout: {url}")
+            return None
+        except aiohttp.ClientResponseError as e:
+            print(f"HTTP error {e.status}: {url}")
+            return None
+        except aiohttp.ClientError as e:
+            print(f"Client error: {url} -> {e}")
+            return None
+
+
+async def fetch_and_parse_page(
+    session: aiohttp.ClientSession,
+    material_name: str,
+    page_url: str,
+    semaphore: asyncio.Semaphore,
+) -> tuple[str, str, list[dict]]:
+    html = await get_page(session, page_url, semaphore)
+    if html is None:
+        return material_name, page_url, []
+
+    parsed_items = parse_page(html)
+
+    for item in parsed_items:
+        item["material_name"] = material_name
+        item["source_url"] = page_url
+
+    print(f"Собрано товаров со страницы {page_url}: {len(parsed_items)}")
+    return material_name, page_url, parsed_items
+
+
+async def collect_page() -> list[dict]:
     all_data: list[dict] = []
-    seen_skus: set[tuple[str, str]] = set()  # (material_name, sku)
+    seen_skus: set[tuple[str, str]] = set()
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    for material_name, category_url in STROYLANDIYA_CATEGORY_URLS.items():
-        print(f"\n{'=' * 70}")
-        print(f"Начинаю обработку категории: {material_name}")
-        print(f"URL категории: {category_url}")
+    timeout = aiohttp.ClientTimeout(total=20)
+    connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT_REQUESTS)
 
-        first_html = get_page(category_url)
-        if first_html is None:
-            print(f"Не удалось получить первую страницу для категории: {material_name}")
-            time.sleep(delay_seconds)
-            continue
+    async with aiohttp.ClientSession(
+        headers=HEADERS,
+        timeout=timeout,
+        connector=connector,
+    ) as session:
+        for material_name, category_url in STROYLANDIYA_CATEGORY_URLS.items():
+            print(f"\n{'=' * 70}")
+            print(f"Начинаю обработку категории: {material_name}")
+            print(f"URL категории: {category_url}")
 
-        page_urls = build_pagination_urls(category_url, first_html)
-        print(f"Всего страниц в категории '{material_name}': {len(page_urls)}")
+            first_html = await get_page(session, category_url, semaphore)
+            if first_html is None:
+                print(f"Не удалось получить первую страницу для категории: {material_name}")
+                continue
 
-        category_count = 0
+            page_urls = build_pagination_urls(category_url, first_html)
+            print(f"Всего страниц в категории '{material_name}': {len(page_urls)}")
 
-        for page_index, page_url in enumerate(page_urls, start=1):
-            print(f"\nПарсим страницу {page_index}/{len(page_urls)}: {page_url}")
+            category_results: list[tuple[str, str, list[dict]]] = []
 
-            if page_index == 1:
-                html = first_html
-            else:
-                html = get_page(page_url)
-                if html is None:
-                    print(f"Не удалось получить страницу: {page_url}")
-                    time.sleep(delay_seconds)
-                    continue
-
-            parsed_items = parse_page(html)
-
-            unique_items = []
-            for item in parsed_items:
+            first_items = parse_page(first_html)
+            for item in first_items:
                 item["material_name"] = material_name
-                item["source_url"] = page_url
+                item["source_url"] = category_url
+            category_results.append((material_name, category_url, first_items))
 
-                sku = item.get("sku")
-                unique_key = (material_name, sku)
+            other_page_urls = page_urls[1:]
+            tasks = [
+                fetch_and_parse_page(session, material_name, page_url, semaphore)
+                for page_url in other_page_urls
+            ]
 
-                # защита от дублей
-                if sku is not None and unique_key in seen_skus:
-                    continue
+            if tasks:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                if sku is not None:
-                    seen_skus.add(unique_key)
+                for result in results:
+                    if isinstance(result, Exception):
+                        print(f"Ошибка при обработке категории '{material_name}': {result}")
+                        continue
+                    category_results.append(result)
 
-                unique_items.append(item)
+            category_count = 0
 
-            all_data.extend(unique_items)
-            category_count += len(unique_items)
+            for _, _, parsed_items in category_results:
+                unique_items = []
 
-            print(f"Собрано товаров с этой страницы: {len(unique_items)}")
+                for item in parsed_items:
+                    sku = item.get("sku")
+                    unique_key = (material_name, sku)
 
-            time.sleep(delay_seconds)
+                    if sku is not None and unique_key in seen_skus:
+                        continue
 
-        print(f"\nИтого собрано по категории '{material_name}': {category_count}")
+                    if sku is not None:
+                        seen_skus.add(unique_key)
+
+                    unique_items.append(item)
+
+                all_data.extend(unique_items)
+                category_count += len(unique_items)
+
+            print(f"Итого собрано по категории '{material_name}': {category_count}")
 
     print(f"\n{'=' * 70}")
     print(f"Всего собрано товаров: {len(all_data)}")
     return all_data
 
 
-if __name__ == "__main__":
-    data = collect_page(delay_seconds=1.0)
+async def main() -> None:
+    data = await collect_page()
     print(f"Финальный результат: {len(data)} товаров")
 
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
 
