@@ -1,5 +1,6 @@
 from bs4 import BeautifulSoup
 import requests
+import time
 
 
 STROYLANDIYA_CATEGORY_URLS = {
@@ -104,13 +105,37 @@ def parse_page(html: str) -> list[dict]:
         }
 
         data.append(parsed_data)
-
     return data
 
 
 
-def collect_page() -> list[dict]:
-    pass
+def collect_page(delay_seconds: float = 2.0) -> list[dict]:
+    all_data: list[dict] = []
+
+    for material_name, url in STROYLANDIYA_CATEGORY_URLS.items():
+        print(f"\nНачинаю обработку категории: {material_name}")
+        print(f"URL: {url}")
+
+        html = get_page(url)
+        if html is None:
+            print(f"Не удалось получить страницу для категории: {material_name}")
+            time.sleep(delay_seconds)
+            continue
+
+        parsed_items = parse_page(html)
+
+        for item in parsed_items:
+            item["material_name"] = material_name
+            item["source_url"] = url
+
+        all_data.extend(parsed_items)
+
+        print(f"Собрано товаров из категории '{material_name}': {len(parsed_items)}")
+
+        time.sleep(delay_seconds)
+
+    print(f"\nВсего собрано товаров: {len(all_data)}")
+    return all_data
 
 
 html = get_page(STROYLANDIYA_CATEGORY_URLS["Брус"])
