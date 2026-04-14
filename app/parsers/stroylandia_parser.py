@@ -10,7 +10,7 @@ STROYLANDIYA_CATEGORY_URLS = {
     "Брус": "https://stroylandiya.ru/catalog/brus/",
     "Доска обрезная": "https://stroylandiya.ru/catalog/doska/",
     "Минеральная вата": "https://stroylandiya.ru/search/?q=минеральная%20вата",
-    "OSB - плита": "https://stroylandiya.ru/catalog/osb-plity/",
+    "OSB-плита": "https://stroylandiya.ru/catalog/osb-plity/",
     "Пенополистирол": "https://stroylandiya.ru/catalog/penopolistirolnye-plity/",
     "Цемент": "https://stroylandiya.ru/catalog/tsement/",
     "Арматура": "https://stroylandiya.ru/catalog/armatura/",
