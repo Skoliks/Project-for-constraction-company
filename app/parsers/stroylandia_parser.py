@@ -1,9 +1,11 @@
 import asyncio
 import math
-from urllib.parse import urljoin, urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 import aiohttp
 from bs4 import BeautifulSoup
+
+from app.core.logger import get_logger
 
 
 STROYLANDIYA_CATEGORY_URLS = {
@@ -33,6 +35,8 @@ HEADERS = {
 
 MAX_CONCURRENT_REQUESTS = 3
 REQUEST_DELAY_SECONDS = 0.5
+
+logger = get_logger(__name__)
 
 
 def get_total_pages(html: str) -> int:
@@ -75,14 +79,16 @@ def add_or_replace_query_param(url: str, key: str, value: str) -> str:
     query[key] = [value]
 
     new_query = urlencode(query, doseq=True)
-    new_url = urlunparse((
-        parsed.scheme,
-        parsed.netloc,
-        parsed.path,
-        parsed.params,
-        new_query,
-        parsed.fragment,
-    ))
+    new_url = urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            new_query,
+            parsed.fragment,
+        )
+    )
     return new_url
 
 
@@ -134,7 +140,7 @@ def parse_page(html: str) -> list[dict]:
     data = []
 
     cards = soup.find_all("div", class_="any-recs-product")
-    print(f"Найдено {len(cards)} карточек товара")
+    logger.info("Найдено карточек товара: %s", len(cards))
 
     for card in cards:
         price_rub = card.get("data-price")
@@ -165,6 +171,7 @@ def parse_page(html: str) -> list[dict]:
             old_price_text = (
                 old_price_text
                 .replace("₽", "")
+                .replace("в‚Ѕ", "")
                 .replace("Р", "")
                 .replace("/шт", "")
                 .replace(" ", "")
@@ -204,17 +211,17 @@ async def get_page(
             async with session.get(url) as response:
                 response.raise_for_status()
                 html = await response.text()
-                print(f"Данные успешно загружены: {url}")
+                logger.info("Страница успешно загружена: %s", url)
                 return html
 
         except asyncio.TimeoutError:
-            print(f"Timeout: {url}")
+            logger.warning("Timeout при загрузке страницы: %s", url)
             return None
         except aiohttp.ClientResponseError as e:
-            print(f"HTTP error {e.status}: {url}")
+            logger.warning("HTTP error %s при загрузке страницы: %s", e.status, url)
             return None
         except aiohttp.ClientError as e:
-            print(f"Client error: {url} -> {e}")
+            logger.warning("Client error при загрузке страницы %s: %s", url, e)
             return None
 
 
@@ -234,7 +241,12 @@ async def fetch_and_parse_page(
         item["material_name"] = material_name
         item["source_url"] = page_url
 
-    print(f"Собрано товаров со страницы {page_url}: {len(parsed_items)}")
+    logger.info(
+        "Собрано товаров со страницы | material=%s | url=%s | items=%s",
+        material_name,
+        page_url,
+        len(parsed_items),
+    )
     return material_name, page_url, parsed_items
 
 
@@ -252,17 +264,27 @@ async def collect_page() -> list[dict]:
         connector=connector,
     ) as session:
         for material_name, category_url in STROYLANDIYA_CATEGORY_URLS.items():
-            print(f"\n{'=' * 70}")
-            print(f"Начинаю обработку категории: {material_name}")
-            print(f"URL категории: {category_url}")
+            logger.info(
+                "Старт обработки категории | material=%s | url=%s",
+                material_name,
+                category_url,
+            )
 
             first_html = await get_page(session, category_url, semaphore)
             if first_html is None:
-                print(f"Не удалось получить первую страницу для категории: {material_name}")
+                logger.warning(
+                    "Не удалось получить первую страницу категории | material=%s | url=%s",
+                    material_name,
+                    category_url,
+                )
                 continue
 
             page_urls = build_pagination_urls(category_url, first_html)
-            print(f"Всего страниц в категории '{material_name}': {len(page_urls)}")
+            logger.info(
+                "Определено страниц в категории | material=%s | pages=%s",
+                material_name,
+                len(page_urls),
+            )
 
             category_results: list[tuple[str, str, list[dict]]] = []
 
@@ -283,7 +305,11 @@ async def collect_page() -> list[dict]:
 
                 for result in results:
                     if isinstance(result, Exception):
-                        print(f"Ошибка при обработке категории '{material_name}': {result}")
+                        logger.exception(
+                            "Ошибка при обработке страницы категории | material=%s | error=%s",
+                            material_name,
+                            result,
+                        )
                         continue
                     category_results.append(result)
 
@@ -307,19 +333,20 @@ async def collect_page() -> list[dict]:
                 all_data.extend(unique_items)
                 category_count += len(unique_items)
 
-            print(f"Итого собрано по категории '{material_name}': {category_count}")
+            logger.info(
+                "Категория обработана | material=%s | unique_items=%s",
+                material_name,
+                category_count,
+            )
 
-    print(f"\n{'=' * 70}")
-    print(f"Всего собрано товаров: {len(all_data)}")
+    logger.info("Сбор Стройландии завершен | total_items=%s", len(all_data))
     return all_data
 
 
 async def main() -> None:
     data = await collect_page()
-    print(f"Финальный результат: {len(data)} товаров")
+    logger.info("Финальный результат парсера | total_items=%s", len(data))
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
